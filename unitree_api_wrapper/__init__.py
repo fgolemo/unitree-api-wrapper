@@ -1,4 +1,6 @@
 import sys
+import os
 
 # make library available internally
-sys.path.append("./lib/")
+path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"lib") 
+sys.path.append(path)
