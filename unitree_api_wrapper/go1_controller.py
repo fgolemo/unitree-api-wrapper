@@ -1,6 +1,7 @@
 import unitree_api_wrapper
 import math
 import robot_interface as sdk
+from unitree_api_wrapper.format import LowState
 
 
 class Go1Controller:
@@ -56,7 +57,9 @@ class Go1Controller:
         self.udp.Send()
         return state
 
-    def get_state(self):
+    def get_state(self) -> LowState:
+        ## return value is a LowState, see here:
+        # https://github.com/unitreerobotics/unitree_legged_sdk/blob/master/include/unitree_legged_sdk/comm.h#L93
         self.udp.Recv()
         self.udp.GetRecv(self.state)
         return self.state
