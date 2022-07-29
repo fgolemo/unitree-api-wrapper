@@ -77,7 +77,7 @@ class Go1Controller:
         self.udp.GetRecv(self.state)
         return self.state
     
-    def get_model_obs(self):
+    def get_model_obs(self, command = torch.zeros(3)):
         obs = torch.zeros((1, 48))
         
         # Get low level state information
@@ -89,14 +89,24 @@ class Go1Controller:
         # Get Vicon state
         base_lin_vel, base_ang_vel = self.tracker.compute_velocity()
         
-        # Add command
-        commands = torch.zeros(3) # TODO: implement
-        
         obs[0, 0:3] = base_lin_vel * 1 # Add scale
         obs[0, 3:6] = base_ang_vel * 1 # Add scale
         obs[0, 6:9] = projected_gravity
-        obs[0, 9:12] = commands * 1 # Add scale
+        # TODO: Check that motor order matches dof order in Isaac and unitree wrapper
+        obs[0, 9:12] = command * 1 # Add scale 
         obs[0, 12:24] = dof_pos * 1 # Add scale
         obs[0, 24:36] = dof_vel * 1 # Add scale
         obs[0, 36:48] = self.last_action
         return obs
+    
+    def get_action(self, obs):
+        with torch.no_grad():
+            action = self.model(obs.to(self.device))
+        # TODO: Add offset to match dof values from Isaac
+        return action
+
+    def control_highlevel(self, command):
+        obs = self.get_model_obs(command)
+        action = self.get_action(obs)
+        state = self.send_pos_cmd(pos=action.numpy())
+        return state
