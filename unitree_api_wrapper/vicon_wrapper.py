@@ -1,16 +1,17 @@
 
-from time import time
+import time
 import numpy as np
-import torch
 from pyvicon.pyvicon import PyVicon, StreamMode
 from isaacgym.torch_utils import quat_rotate_inverse
+import torch
 
 
 class ViconTracker:
     def __init__(self, object_id='go', host='172.19.0.61:801'):
+        self.gravity_vec = torch.tensor([0,0,-1], dtype=torch.double)
         self.id = object_id
         self.tracker = PyVicon()
-        print("frame", self.test.get_frame())
+        print("frame", self.tracker.get_frame())
         self.tracker.connect(host)
         self.tracker.set_stream_mode(StreamMode.ClientPull)
         self.tracker.connect("172.19.0.61:801")
@@ -44,10 +45,11 @@ class ViconTracker:
             self.last_position = pos
             self.last_rotation = rot
             self.last_quat = quat
-            q = self.quat_to_torch(quat)
-            lin_vel = quat_rotate_inverse(q, (pos - self.last_position)) / dt
-            ang_vel = quat_rotate_inverse(q, (rot - self.last_rotation)) / dt
-            return lin_vel, ang_vel
+            q = self.quat_to_torch(quat).unsqueeze(0).double()
+            lin_vel = quat_rotate_inverse(q, torch.tensor((pos - self.last_position), dtype=torch.double)) / dt
+            ang_vel = quat_rotate_inverse(q, torch.tensor((rot - self.last_rotation), dtype=torch.double)) / dt
+            projected_gravity = quat_rotate_inverse(q, self.gravity_vec)
+            return lin_vel, ang_vel, projected_gravity
         else:
             return None, None
         
