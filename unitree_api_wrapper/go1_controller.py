@@ -30,10 +30,11 @@ class Go1Controller:
         self.LOWLEVEL = 0xFF
         self.kp = [10, 10, 10]
         self.kd = [4, 4, 4]
-        self.offset = np.array([[-0.2, 1.8, -2.8], 
-                                [1.2, 1.7, -3.45], 
-                                [-1.2, 2.0, -3.0], 
-                                [1.2, 2.0, -3.0]])
+        # FR, FL, RR, RL
+        self.offset = np.array([[ -0.1, 0.8, -1.5], 
+                                [  0.1, 0.8, -1.5], 
+                                [ -0.1, 1.0, -1.5], 
+                                [  0.1, 1.0, -1.5]])
         if policy_path is not None:
             self.load_policy(policy_path) 
             self.tracker = ViconTracker(object_id='go', host='172.19.0.61:801')
@@ -69,6 +70,7 @@ class Go1Controller:
         # Iterate legs
         for leg_idx in range(4):
             for motor_idx in range(3):
+                # self.cmd.motorCmd[leg_idx * 3 + motor_idx].mode = 1
                 self.cmd.motorCmd[leg_idx * 3 + motor_idx].q = pos_cmd[leg_idx][motor_idx]
                 self.cmd.motorCmd[leg_idx * 3 + motor_idx].dq = vel_cmd[leg_idx][motor_idx]
                 self.cmd.motorCmd[leg_idx * 3 + motor_idx].Kp = self.kp[motor_idx]
@@ -94,16 +96,24 @@ class Go1Controller:
         # Get low level state information
         state = self.get_low_state()
         
-        dof_pos = np.array([m.q for m in state.motorState])
-        dof_pos = torch.from_numpy(dof_pos[[3,4,5,0,1,2,9,10,11,6,7,8]] - self.offset.reshape(-1))
-        dof_vel = np.array([m.dq for m in state.motorState])
-        dof_vel = torch.from_numpy(dof_vel[[3,4,5,0,1,2,9,10,11,6,7,8]])
+        dof_pos = np.array([m.q for m in state.motorState[:12]])
+        dof_pos = torch.from_numpy(dof_pos - self.offset.reshape(-1))
+        dof_vel = np.array([m.dq for m in state.motorState[:12]])
+        dof_vel = torch.from_numpy(dof_vel)
         
         # Get Vicon state
         base_lin_vel, base_ang_vel, projected_gravity = self.tracker.compute_velocity()
         
         # Add command
-        commands = torch.Tensor([1.0, 0, 0]) # TODO: implement
+        commands = torch.Tensor([0.5, 0, 0]) # TODO: implement
+        
+        obs_dict = {"base_lin_vel": base_lin_vel, 
+                    "base_ang_vel": base_ang_vel, 
+                    "projected_gravity": projected_gravity,
+                    "commands": commands,
+                    "dof_pos": dof_pos,
+                    "dof_vel": dof_vel, 
+                    "last_action": self.last_action}
         
         obs[0, 0:3] = base_lin_vel * self.lin_scale
         obs[0, 3:6] = base_ang_vel * self.ang_scale
@@ -112,19 +122,20 @@ class Go1Controller:
         obs[0, 12:24] = dof_pos * self.dof_scale
         obs[0, 24:36] = dof_vel * self.dof_vel_scale
         obs[0, 36:48] = self.last_action
-        return obs
+        return obs, obs_dict
     
     def get_action(self, obs):
         obs = obs.to(self.device)
         with torch.no_grad():
-            action = self.model(obs) * self.action_scale
+            action = self.model(obs)
+            action_scaled = action * self.action_scale
         self.last_action = action
-        return action.squeeze().cpu().numpy()
+        return action_scaled.squeeze().cpu().numpy()
     
     def control_highlevel(self):
-        obs = self.get_model_obs()
+        obs, obs_raw = self.get_model_obs()
         action = self.get_action(obs)
-        action = action[[3,4,5,0,1,2,9,10,11,6,7,8]].reshape((4,3))
-        state = self.send_pos_cmd()
-        return state, obs, action
+        action = action.reshape((4,3))
+        state = self.send_pos_cmd(pos_cmd=action)
+        return state, obs, action, obs_raw
     
