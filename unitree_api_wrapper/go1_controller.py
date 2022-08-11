@@ -3,7 +3,8 @@ import math
 import numpy as np
 import robot_interface as sdk
 from unitree_api_wrapper.format import LowState
-from unitree_api_wrapper.vicon_wrapper import ViconTracker 
+
+from unitree_api_wrapper.vicon_wrapper import ViconTracker
 
 import torch
 from pupperfetch.legged_gym.envs.go1.go1_config import Go1FlatCfg
@@ -31,8 +32,8 @@ class Go1Controller:
         self.LOWLEVEL = 0xFF
         self.kp = [5, 5, 5]
         self.kd = [1, 1, 1]
-        self.load_policy(policy_path) 
-        self.tracker = ViconTracker(object_id='go', host='172.19.0.61:801')
+        self.load_policy(policy_path)
+        self.tracker = ViconTracker(object_id="go", host="172.19.0.61:801")
         self.last_action = torch.zeros(12)
 
     def connect(self):
@@ -42,7 +43,7 @@ class Go1Controller:
         self.cmd = sdk.LowCmd()
         self.state = sdk.LowState()
         self.udp.InitCmdData(self.cmd)
-    
+
     def load_policy(self, policy_path):
         self.device = torch.device("cpu")
         self.cfg = Go1FlatCfg()
@@ -76,29 +77,29 @@ class Go1Controller:
         self.udp.Recv()
         self.udp.GetRecv(self.state)
         return self.state
-    
-    def get_model_obs(self, command = torch.zeros(3)):
+
+    def get_model_obs(self, command=torch.zeros(3)):
         obs = torch.zeros((1, 48))
-        
+
         # Get low level state information
         state = self.get_low_state()
-        projected_gravity = torch.zeros(3) # TODO: implement
-        dof_pos = torch.zeros(12) # TODO: implement, where 0 is resting position in Isaac
-        dof_vel = torch.zeros(12) # TODO: implement
-        
+        projected_gravity = torch.zeros(3)  # TODO: implement
+        dof_pos = torch.zeros(12)  # TODO: implement, where 0 is resting position in Isaac
+        dof_vel = torch.zeros(12)  # TODO: implement
+
         # Get Vicon state
         base_lin_vel, base_ang_vel = self.tracker.compute_velocity()
-        
-        obs[0, 0:3] = base_lin_vel * 1 # Add scale
-        obs[0, 3:6] = base_ang_vel * 1 # Add scale
+
+        obs[0, 0:3] = base_lin_vel * 1  # Add scale
+        obs[0, 3:6] = base_ang_vel * 1  # Add scale
         obs[0, 6:9] = projected_gravity
         # TODO: Check that motor order matches dof order in Isaac and unitree wrapper
-        obs[0, 9:12] = command * 1 # Add scale 
-        obs[0, 12:24] = dof_pos * 1 # Add scale
-        obs[0, 24:36] = dof_vel * 1 # Add scale
+        obs[0, 9:12] = command * 1  # Add scale
+        obs[0, 12:24] = dof_pos * 1  # Add scale
+        obs[0, 24:36] = dof_vel * 1  # Add scale
         obs[0, 36:48] = self.last_action
         return obs
-    
+
     def get_action(self, obs):
         with torch.no_grad():
             action = self.model(obs.to(self.device))
