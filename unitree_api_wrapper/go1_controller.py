@@ -47,7 +47,7 @@ class Go1Controller:
         self.cmd = sdk.LowCmd()
         self.state = sdk.LowState()
         self.udp.InitCmdData(self.cmd)
-    
+
     def load_policy(self, policy_path):
         self.device = torch.device("cpu")
         self.cfg = Go1FlatCfg()
@@ -89,10 +89,10 @@ class Go1Controller:
         self.udp.Recv()
         self.udp.GetRecv(self.state)
         return self.state
-    
-    def get_model_obs(self):
+
+    def get_model_obs(self, command=torch.zeros(3)):
         obs = torch.zeros((1, 48))
-        
+
         # Get low level state information
         state = self.get_low_state()
         

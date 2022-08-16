@@ -49,4 +49,4 @@ if __name__ == "__main__":
             np.savez('go1_data_2022_08_04.npz', obs_list=obs_list, action_list=action_list)
             exit()
             
-        
+       
