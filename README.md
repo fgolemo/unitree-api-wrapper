@@ -1,4 +1,4 @@
-# unitree-api-wrapper
+# unitree-api-wrapper - for the Unitree Go1
 
 
 REQUIRES Python 3.8 BC THAT'S WHAT THE UNITREE LIBRARY IS COMPILED FOR FOR SOME REASON
