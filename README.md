@@ -8,6 +8,15 @@ Copy or symlink library https://github.com/unitreerobotics/unitree_legged_sdk/bl
 
 over into `/unitree_api_wrapper/lib`
 
+## Prepare the robot (Go1 only)
+
+When you swap batteries and first boot up the robot, the following applies:
+
+- Make sure you boot up the robot always in the same flat resting position, NOT on a rack/gantry. When you switch batteries, take it off the rack/gantry
+- You will know that booting is done when the robot stands up.
+- When the robot is standing up, it's running what's called "sport mode", which means it will listen to the gamepad for remote control and when you send commands they will clash with that. 
+- So you need to terminate "sport mode". To do that run `./kill-sport-mode.sh` (password is `123`). If you've done that correctly, the robot will lie down. And then it's ready to be used with this library 
+
 ## Train policy
 
 IMPORTANT:
