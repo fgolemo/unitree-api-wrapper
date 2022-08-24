@@ -1,15 +1,28 @@
+import time
+
 import unitree_api_wrapper
 import math
 import numpy as np
-import robot_interface as sdk
-from unitree_api_wrapper.format import LowState
-from unitree_api_wrapper.vicon_wrapper import ViconTracker 
-from pupperfetch.legged_gym.envs.go1.go1_config import Go1FlatCfg
+import robot_interface as sdk  # if you import `unitree_api_wrapper` above, then that should take of that
+from unitree_api_wrapper.format import LowState, LowCmd
+from unitree_api_wrapper.utils import quat_rotate_inverse
+
 import torch
 
 
+class Go1CfgScales:
+    lin_vel = 2.0
+    ang_vel = 0.25
+    dof_pos = 1.0
+    dof_vel = 0.05
+    action = 0.25
+    def __init__(self):
+        super().__init__()
+        self.cmd_scale = np.array([self.lin_vel, self.lin_vel, self.ang_vel])
+
+
 class Go1Controller:
-    def __init__(self, device="cpu", policy_path="policies/go1_flat---22May28_17-36-59_.pt"):
+    def __init__(self, device="cpu", policy_path=None, with_linvel=False, use_vicon=False):
         self.d = {
             "FR_0": 0,
             "FR_1": 1,
@@ -30,34 +43,47 @@ class Go1Controller:
         self.LOWLEVEL = 0xFF
         self.kp = [10, 10, 10]
         self.kd = [4, 4, 4]
+        self.cfg = Go1CfgScales()
+        obs_len = 42
+        self.with_linvel = with_linvel
+        if with_linvel:
+            obs_len = 48
+        self.obs = torch.zeros((1, obs_len))
         # FR, FL, RR, RL
-        self.offset = np.array([[ -0.1, 0.8, -1.5], 
-                                [  0.1, 0.8, -1.5], 
-                                [ -0.1, 1.0, -1.5], 
-                                [  0.1, 1.0, -1.5]])
-        if policy_path is not None:
-            self.load_policy(policy_path) 
-            self.tracker = ViconTracker(object_id='go', host='172.19.0.61:801')
-            self.last_action = torch.zeros(12)
+        # rest pos - copied from legged_gym
+        self.offset = np.array([[-0.1, 0.8, -1.5], [0.1, 0.8, -1.5], [-0.1, 1.0, -1.5], [0.1, 1.0, -1.5]])
+        self.dt = 1/200 # run a 200Hz control loop
+        self.decimation = 4 # but repeat action 4 times, so effective control freq = 50Hz
 
-    def connect(self):
+        if policy_path is not None:
+            self.device = torch.device("cpu")
+            self.model = torch.jit.load(unitree_api_wrapper.get_policy_path(policy_path)).to(self.device)
+            self.last_action = np.zeros(12)
+            self.tracker = None
+            if use_vicon:
+                from unitree_api_wrapper.vicon_wrapper import ViconTracker
+                self.tracker = ViconTracker(object_id="go", host="172.19.0.61:801")
+
+    def connect_and_stand(self):
         self.udp = sdk.UDP(self.LOWLEVEL, 8080, "192.168.123.10", 8007)
         self.safe = sdk.Safety(sdk.LeggedType.Go1)
 
-        self.cmd = sdk.LowCmd()
-        self.state = sdk.LowState()
+        self.cmd: LowCmd = sdk.LowCmd()
+        self.state: LowState = sdk.LowState()
         self.udp.InitCmdData(self.cmd)
 
-    def load_policy(self, policy_path):
-        self.device = torch.device("cpu")
-        self.cfg = Go1FlatCfg()
-        self.lin_scale = self.cfg.normalization.obs_scales.lin_vel
-        self.ang_scale = self.cfg.normalization.obs_scales.ang_vel
-        self.dof_scale = self.cfg.normalization.obs_scales.dof_pos
-        self.dof_vel_scale = self.cfg.normalization.obs_scales.dof_vel
-        self.cmd_scale = np.array([self.lin_scale, self.lin_scale, self.ang_scale])
-        self.action_scale = self.cfg.control.action_scale
-        self.model = torch.jit.load(policy_path).to(self.device)
+        dt = 1.0 / 50.0
+        # slowly ramping up kp over 3 secs
+        for counter in range(int(3.0 / dt)):
+            if counter < 50:
+                self.kp = [10, 10, 10]
+            elif counter < 100:
+                self.kp = [40, 40, 40]
+            else:
+                self.kp = [60, 60, 60]
+
+            self.send_pos_cmd() # send zero command, i.e. rest pos
+            time.sleep(dt)
 
     def send_pos_cmd(
         self,
@@ -66,7 +92,7 @@ class Go1Controller:
         torque_cmd=[[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
     ):
         pos_cmd = np.array(pos_cmd) + self.offset
-        
+
         # Iterate legs
         for leg_idx in range(4):
             for motor_idx in range(3):
@@ -77,65 +103,67 @@ class Go1Controller:
                 self.cmd.motorCmd[leg_idx * 3 + motor_idx].Kd = self.kd[motor_idx]
                 self.cmd.motorCmd[leg_idx * 3 + motor_idx].tau = torque_cmd[leg_idx][motor_idx]
 
-        state = self.get_low_state()
+        self.state = self.get_low_state()
         self.safe.PowerProtect(self.cmd, self.state, 1)
         self.udp.SetSend(self.cmd)
         self.udp.Send()
-        return state
+        return self.state
 
     def get_low_state(self) -> LowState:
-        ## return value is a LowState, see here:
-        # https://github.com/unitreerobotics/unitree_legged_sdk/blob/master/include/unitree_legged_sdk/comm.h#L93
         self.udp.Recv()
         self.udp.GetRecv(self.state)
         return self.state
 
-    def get_model_obs(self, command=torch.zeros(3)):
-        obs = torch.zeros((1, 48))
+    def get_obs(self, command=torch.zeros(3)):
+        self.obs.fill_(0)  # zero out the obs before we do anything
 
         # Get low level state information
         state = self.get_low_state()
-        
+
         dof_pos = np.array([m.q for m in state.motorState[:12]])
-        dof_pos = torch.from_numpy(dof_pos - self.offset.reshape(-1))
+        dof_pos = torch.from_numpy(dof_pos - self.offset.reshape(-1))  # subtract resting position
         dof_vel = np.array([m.dq for m in state.motorState[:12]])
         dof_vel = torch.from_numpy(dof_vel)
-        
-        # Get Vicon state
-        base_lin_vel, base_ang_vel, projected_gravity = self.tracker.compute_velocity()
-        
-        # Add command
-        commands = torch.Tensor([0.5, 0, 0]) # TODO: implement
-        
-        obs_dict = {"base_lin_vel": base_lin_vel, 
-                    "base_ang_vel": base_ang_vel, 
-                    "projected_gravity": projected_gravity,
-                    "commands": commands,
-                    "dof_pos": dof_pos,
-                    "dof_vel": dof_vel, 
-                    "last_action": self.last_action}
-        
-        obs[0, 0:3] = base_lin_vel * self.lin_scale
-        obs[0, 3:6] = base_ang_vel * self.ang_scale
-        obs[0, 6:9] = projected_gravity
-        obs[0, 9:12] = commands * self.cmd_scale
-        obs[0, 12:24] = dof_pos * self.dof_scale
-        obs[0, 24:36] = dof_vel * self.dof_vel_scale
-        obs[0, 36:48] = self.last_action
-        return obs, obs_dict
-    
+
+        if self.tracker is not None:
+            # Get Vicon state
+            base_lin_vel, base_ang_vel, projected_gravity = self.tracker.compute_velocity()
+        else:
+            base_quat = np.array(state.imu.quaternion)
+            projected_gravity = quat_rotate_inverse(base_quat, np.array([0, 0, -1]))
+
+        obs_out = []
+        if self.with_linvel:
+            obs_out.append(base_lin_vel * self.cfg.lin_vel)
+            obs_out.append(base_ang_vel * self.cfg.ang_vel)
+
+        obs_out.append(projected_gravity)
+        obs_out.append(command * self.cfg.cmd_scale)
+        obs_out.append(dof_pos * self.cfg.dof_pos)
+        obs_out.append(dof_vel * self.cfg.dof_vel)
+        obs_out.append(self.last_action)
+
+        o = np.concatenate(obs_out).ravel()
+
+        self.obs[0, :] = torch.from_numpy(o)
+
+        return self.obs
+
     def get_action(self, obs):
+        # important: the last action is the unscaled action but the thing that runs on the robot is the scaled action
         obs = obs.to(self.device)
         with torch.no_grad():
             action = self.model(obs)
-            action_scaled = action * self.action_scale
-        self.last_action = action
+        action_scaled = action * self.cfg.action
+        self.last_action = action[0]
         return action_scaled.squeeze().cpu().numpy()
-    
-    def control_highlevel(self):
-        obs, obs_raw = self.get_model_obs()
+
+    def control_highlevel(self, cmd):
+        obs = self.get_obs(cmd)
         action = self.get_action(obs)
-        action = action.reshape((4,3))
-        state = self.send_pos_cmd(pos_cmd=action)
-        return state, obs, action, obs_raw
-    
+        action = action.reshape((4, 3))
+        for _ in range(self.decimation):
+            state = self.send_pos_cmd(pos_cmd=action)
+            time.sleep(self.dt) # important
+
+        return state, obs, action

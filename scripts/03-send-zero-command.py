@@ -4,7 +4,7 @@ import unitree_api_wrapper
 from unitree_api_wrapper.go1_controller import Go1Controller
 
 controller = Go1Controller()
-controller.connect()
+controller.connect_and_stand()
 
 while True:
     time.sleep(0.002)

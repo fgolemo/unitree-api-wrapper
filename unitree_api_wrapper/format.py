@@ -144,3 +144,72 @@ class LowState:
     wirelessRemote: List[int]
     reserve: int
     crc: int
+
+
+# 	typedef struct
+# 	{
+# 		uint8_t off;                       // off 0xA5
+# 		std::array<uint8_t, 3> reserve;
+# 	} BmsCmd;
+
+
+@dataclass()
+class BmsCmd:
+    off: int
+    reserve: Tuple[int, int, int]
+
+
+# 	typedef struct
+# 	{
+# 		uint8_t mode;                      // desired working mode
+# 		float q;                           // desired angle (unit: radian)
+# 		float dq;                          // desired velocity (unit: radian/second)
+# 		float tau;                         // desired output torque (unit: N.m)
+# 		float Kp;                          // desired position stiffness (unit: N.m/rad )
+# 		float Kd;                          // desired velocity stiffness (unit: N.m/(rad/s) )
+# 		std::array<uint32_t, 3> reserve;
+# 	} MotorCmd;
+
+
+@dataclass()
+class MotorCmd:
+    mode: int  # desired working mode
+    q: float  # desired angle (unit: radian)
+    dq: float  # desired velocity (unit: radian/second)
+    tau: float  # desired output torque (unit: N.m)
+    Kp: float  # desired position stiffness (unit: N.m/rad )
+    Kd: float  # desired velocity stiffness (unit: N.m/(rad/s) )
+    reserve: Tuple[int, int]
+
+
+# 	typedef struct
+# 	{
+# 		std::array<uint8_t, 2> head;
+# 		uint8_t levelFlag;
+# 		uint8_t frameReserve;
+#
+# 		std::array<uint32_t, 2> SN;
+# 		std::array<uint32_t, 2> version;
+# 		uint16_t bandWidth;
+# 		std::array<MotorCmd, 20> motorCmd;
+# 		BmsCmd bms;
+# 		std::array<uint8_t, 40> wirelessRemote;
+# 		uint32_t reserve;
+#
+# 		uint32_t crc;
+# 	} LowCmd;
+
+
+@dataclass()
+class LowCmd:
+    head: Tuple[int, int]
+    levelFlag: int
+    frameReserve: int
+    SN: Tuple[int, int]
+    version: Tuple[int, int]
+    bandWidth: int
+    motorCmd: List[MotorCmd]
+    bms: BmsCmd
+    wirelessRemote: List[int]
+    reserve: int
+    crc: int

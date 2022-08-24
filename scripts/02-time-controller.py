@@ -6,7 +6,7 @@ from unitree_api_wrapper.go1_controller import Go1Controller
 
 if __name__ == "__main__":
     controller = Go1Controller()
-    controller.connect()
+    controller.connect_and_stand()
 
     motiontime = 0
 
