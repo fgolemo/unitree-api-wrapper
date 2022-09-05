@@ -18,7 +18,6 @@ if __name__ == "__main__":
     cmd = torch.Tensor([0.5, 0, 0])
     while True:
         state, obs, action = controller.control_highlevel(cmd)
-        time.sleep(controller.dt) # very important - same amount of time between actions like in sim, respecting decimation
         print ("===")
         print (obs)
         print (action)
