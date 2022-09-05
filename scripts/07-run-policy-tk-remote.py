@@ -11,6 +11,7 @@ maxval = 0
 init_steps = 10
 step_counter = 0
 
+
 def step_env():
     global obs, maxval, step_counter
 
