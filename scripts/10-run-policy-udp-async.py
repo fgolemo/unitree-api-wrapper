@@ -22,6 +22,9 @@ def receive_floats(shared_data):
     sock.bind((listen_ip, listen_port))
     
     while True:
+         # Discard any previous unread data
+        while sock.recv(1024):
+            pass
         # Receive data
         data, addr = sock.recvfrom(1024)
 
