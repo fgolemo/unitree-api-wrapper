@@ -4,7 +4,7 @@
 
 NOTE: REQUIRES Python 3.8 BC THAT'S WHAT THE UNITREE LIBRARY IS COMPILED FOR FOR SOME REASON
 
-1. Copy or symlink [Go1 SDK](https://github.com/unitreerobotics/unitree_legged_sdk/blob/master/lib/python/amd64/robot_interface.cpython-38-x86_64-linux-gnu.so) into the two following folders: `lib` and `unitree_api_wrapper/lib/`
+1. Copy or symlink [Go1's lib](https://github.com/unitreerobotics/unitree_legged_sdk/blob/master/lib/python/amd64/robot_interface.cpython-38-x86_64-linux-gnu.so) into the two following folders: `lib` and `unitree_api_wrapper/lib/`
 
 2. Run `pip install -e .`
 
