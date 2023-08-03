@@ -18,7 +18,9 @@ class Go1CfgScales:
     action = 0.25
     def __init__(self):
         super().__init__()
-        self.cmd_scale = np.array([self.lin_vel, self.lin_vel, self.ang_vel])
+        # self.cmd_scale = np.array([self.lin_vel, self.lin_vel, self.ang_vel])
+        # ang_vel scaling actually seems to be 1 when using heading cmd
+        self.cmd_scale = np.array([self.lin_vel, self.lin_vel, 1])
 
 
 class Go1Controller:
@@ -44,7 +46,7 @@ class Go1Controller:
         self.kp = [10, 10, 10]
         self.kd = [4, 4, 4]
         self.cfg = Go1CfgScales()
-        obs_len = 42
+        obs_len = 43
         self.with_linvel = with_linvel
         if with_linvel:
             obs_len = 48
@@ -114,7 +116,7 @@ class Go1Controller:
         self.udp.GetRecv(self.state)
         return self.state
 
-    def get_obs(self, command=torch.zeros(3)):
+    def get_obs(self, command=torch.zeros(4)):
         self.obs.fill_(0)  # zero out the obs before we do anything
 
         # Get low level state information
@@ -138,10 +140,13 @@ class Go1Controller:
             obs_out.append(base_ang_vel * self.cfg.ang_vel)
 
         obs_out.append(projected_gravity)
-        obs_out.append(command * self.cfg.cmd_scale)
+        obs_out.append(command[:-1] * self.cfg.cmd_scale)
         obs_out.append(dof_pos * self.cfg.dof_pos)
         obs_out.append(dof_vel * self.cfg.dof_vel)
         obs_out.append(self.last_action)
+        obs_out.append(command[-1:] * 1)
+
+        # breakpoint()
 
         o = np.concatenate(obs_out).ravel()
 
@@ -149,14 +154,25 @@ class Go1Controller:
 
         return self.obs
 
+
+    def clip_action_rate(self, last_obs, action, clip_max=0.3):
+        action_diff = action-last_obs[0,6:18]
+        # print ("action diff", action_diff)
+        action_diff = torch.clip(action_diff, -clip_max, clip_max)
+        action_out = last_obs[0,6:18] + action_diff
+        return action_out
+
     def get_action(self, obs):
         # important: the last action is the unscaled action but the thing that runs on the robot is the scaled action
         obs = obs.to(self.device)
         with torch.no_grad():
             action = self.model(obs)
+
         action_scaled = action * self.cfg.action
+        action_out = self.clip_action_rate(obs, action_scaled)
+
         self.last_action = action[0]
-        return action_scaled.squeeze().cpu().numpy()
+        return action_out.squeeze().cpu().numpy()
 
     def control_highlevel(self, cmd):
         obs = self.get_obs(cmd)
