@@ -1,6 +1,7 @@
 from tkinter import Tk, Scale, HORIZONTAL, Button, mainloop
 import torch
 from unitree_api_wrapper.go1_controller import Go1Controller
+from pupperfetch.legged_gym.utils.plotter import LivePlotter
 
 controller = Go1Controller(policy_path="go1_easy_rough-23Jul27_14-50-28_v1.pt")
 controller.connect_and_stand()
@@ -11,6 +12,8 @@ maxval = 0
 init_steps = 10
 step_counter = 0
 
+plotter = LivePlotter()
+
 
 def step_env():
     global obs, maxval, step_counter
@@ -18,6 +21,7 @@ def step_env():
     slider_vals = [v.get() for v in sliders]
     cmd = torch.Tensor(slider_vals)
     state, obs, action = controller.control_highlevel(cmd)
+    plotter.plot_stuff(obs, action)
 
     root.after(int(controller.dt * 1000), step_env)  # reschedule event in 10 milliseconds
 
@@ -43,8 +47,8 @@ root.mainloop()
 
 
 # [x] make sim playback script that is single robot and interactive - to check clipping when walking sideways
-# [ ] change heading command to angular vel
+# [x] change heading command to angular vel
 # [ ] add angular vel to environment (sim and real), retrain policy, run on robot
-# [ ] live plotter for obs and policy
+# [x] live plotter for obs and policy
 # [ ] simon: add history
 # [ ] ken: progressively increasing penalties
