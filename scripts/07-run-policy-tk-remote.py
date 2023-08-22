@@ -1,9 +1,10 @@
+import numpy as np
+from pupperfetch.legged_gym.utils.plotter import AsyncLivePlotter
 from tkinter import Tk, Scale, HORIZONTAL, Button, mainloop
 import torch
 from unitree_api_wrapper.go1_controller import Go1Controller
-from pupperfetch.legged_gym.utils.plotter import LivePlotter
 
-controller = Go1Controller(policy_path="go1_easy_rough-23Jul27_14-50-28_v1.pt")
+controller = Go1Controller(policy_path="23Aug22_11-26-34_.pt")
 controller.connect_and_stand()
 
 root = Tk()
@@ -12,8 +13,10 @@ maxval = 0
 init_steps = 10
 step_counter = 0
 
-plotter = LivePlotter()
-
+plotter = AsyncLivePlotter("real", 100, 0.25)
+# LOG_FOR = 1000
+# log_obs = []
+# log_act = []
 
 def step_env():
     global obs, maxval, step_counter
@@ -22,6 +25,12 @@ def step_env():
     cmd = torch.Tensor(slider_vals)
     state, obs, action = controller.control_highlevel(cmd)
     plotter.plot_stuff(obs, action)
+    # log_obs.append(obs)
+    # log_act.append(action)
+
+    # if len(log_obs) > LOG_FOR:
+    #     np.savez("real-log-2023-08-03.npz", obs = log_obs, act=log_act)
+    #     quit()
 
     root.after(int(controller.dt * 1000), step_env)  # reschedule event in 10 milliseconds
 
@@ -39,7 +48,11 @@ slider.set(0.25)
 slider.pack()
 sliders.append(slider)
 
-butt = Button(root, text="Quit", command=quit)
+def stop():
+    plotter.kill()
+    quit()
+
+butt = Button(root, text="Quit", command=stop)
 butt.pack()
 
 root.after(10, step_env)
