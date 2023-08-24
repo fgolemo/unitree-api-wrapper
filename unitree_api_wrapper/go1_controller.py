@@ -16,6 +16,7 @@ class Go1CfgScales:
     dof_pos = 1.0
     dof_vel = 0.05
     action = 0.25
+
     def __init__(self):
         super().__init__()
         # self.cmd_scale = np.array([self.lin_vel, self.lin_vel, self.ang_vel])
@@ -24,7 +25,9 @@ class Go1CfgScales:
 
 
 class Go1Controller:
-    def __init__(self, device="cpu", policy_path=None, with_linvel=False, use_vicon=False):
+    def __init__(
+        self, device="cpu", policy_path=None, with_linvel=False, with_angvel=False, use_vicon=False, obs_history=1
+    ):
         self.d = {
             "FR_0": 0,
             "FR_1": 1,
@@ -46,16 +49,26 @@ class Go1Controller:
         self.kp = [10, 10, 10]
         self.kd = [4, 4, 4]
         self.cfg = Go1CfgScales()
+        self.dof_len = 12
+        self.dof_start = 6
         obs_len = 43
+
         self.with_linvel = with_linvel
         if with_linvel:
-            obs_len = 48
-        self.obs = torch.zeros((1, obs_len))
+            obs_len += 3
+            self.dof_start += 3
+
+        self.with_angvel = with_angvel
+        if with_angvel:
+            obs_len += 3
+            self.dof_start += 3
+
+        self.obs = torch.zeros((1, obs_len, obs_history))  # batch, obs, history
         # FR, FL, RR, RL
         # rest pos - copied from legged_gym
         self.offset = np.array([[-0.1, 0.8, -1.5], [0.1, 0.8, -1.5], [-0.1, 1.0, -1.5], [0.1, 1.0, -1.5]])
-        self.dt = 1/200 # run a 200Hz control loop
-        self.decimation = 4 # but repeat action 4 times, so effective control freq = 50Hz
+        self.dt = 1 / 200  # run a 200Hz control loop
+        self.decimation = 4  # but repeat action 4 times, so effective control freq = 50Hz
 
         if policy_path is not None:
             self.device = torch.device("cpu")
@@ -64,6 +77,7 @@ class Go1Controller:
             self.tracker = None
             if use_vicon:
                 from unitree_api_wrapper.vicon_wrapper import ViconTracker
+
                 self.tracker = ViconTracker(object_id="go", host="172.19.0.61:801")
 
     def connect_and_stand(self):
@@ -84,7 +98,7 @@ class Go1Controller:
             else:
                 self.kp = [60, 60, 60]
 
-            self.send_pos_cmd() # send zero command, i.e. rest pos
+            self.send_pos_cmd()  # send zero command, i.e. rest pos
             time.sleep(dt)
 
     def send_pos_cmd(
@@ -117,7 +131,7 @@ class Go1Controller:
         return self.state
 
     def get_obs(self, command=torch.zeros(4)):
-        self.obs.fill_(0)  # zero out the obs before we do anything
+        # self.obs.fill_(0)  # zero out the obs before we do anything
 
         # Get low level state information
         state = self.get_low_state()
@@ -133,10 +147,12 @@ class Go1Controller:
         else:
             base_quat = np.array(state.imu.quaternion)
             projected_gravity = quat_rotate_inverse(base_quat, np.array([0, 0, -1]))
+            base_ang_vel = np.array(state.imu.gyroscope)
 
         obs_out = []
         if self.with_linvel:
             obs_out.append(base_lin_vel * self.cfg.lin_vel)
+        if self.with_angvel:
             obs_out.append(base_ang_vel * self.cfg.ang_vel)
 
         obs_out.append(projected_gravity)
@@ -150,21 +166,22 @@ class Go1Controller:
 
         o = np.concatenate(obs_out).ravel()
 
-        self.obs[0, :] = torch.from_numpy(o)
+        self.obs = self.obs.roll(-1, dims=2)
+        self.obs[0, :, -1] = torch.from_numpy(o)
 
         return self.obs
 
-
     def clip_action_rate(self, last_obs, action, clip_max=0.3):
-        action_diff = action-last_obs[0,6:18]
+
+        action_diff = action - last_obs[0, self.dof_start:self.dof_start+self.dof_len]
         # print ("action diff", action_diff)
         action_diff = torch.clip(action_diff, -clip_max, clip_max)
-        action_out = last_obs[0,6:18] + action_diff
+        action_out = last_obs[0, self.dof_start:self.dof_start+self.dof_len] + action_diff
         return action_out
 
     def get_action(self, obs):
         # important: the last action is the unscaled action but the thing that runs on the robot is the scaled action
-        obs = obs.to(self.device)
+        obs = obs.to(self.device).view(1,-1) # flatten the history obs
         with torch.no_grad():
             action = self.model(obs)
 
@@ -180,6 +197,6 @@ class Go1Controller:
         action = action.reshape((4, 3))
         for _ in range(self.decimation):
             state = self.send_pos_cmd(pos_cmd=action)
-            time.sleep(self.dt) # important
+            time.sleep(self.dt)  # important
 
         return state, obs, action

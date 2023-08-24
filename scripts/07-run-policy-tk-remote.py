@@ -4,7 +4,9 @@ from tkinter import Tk, Scale, HORIZONTAL, Button, mainloop
 import torch
 from unitree_api_wrapper.go1_controller import Go1Controller
 
-controller = Go1Controller(policy_path="23Aug22_11-26-34_.pt")
+# controller = Go1Controller(policy_path="23Aug22_11-26-34_.pt")
+HISTORY = 15
+controller = Go1Controller(policy_path="history-15-best.pt", obs_history=HISTORY, with_angvel=True)
 controller.connect_and_stand()
 
 root = Tk()
@@ -13,7 +15,7 @@ maxval = 0
 init_steps = 10
 step_counter = 0
 
-plotter = AsyncLivePlotter("real", 100, 0.25)
+plotter = AsyncLivePlotter("real", 100, 0.25, with_angvel=True)
 # LOG_FOR = 1000
 # log_obs = []
 # log_act = []
@@ -24,7 +26,7 @@ def step_env():
     slider_vals = [v.get() for v in sliders]
     cmd = torch.Tensor(slider_vals)
     state, obs, action = controller.control_highlevel(cmd)
-    plotter.plot_stuff(obs, action)
+    plotter.plot_stuff(obs[:, :, -1], action)
     # log_obs.append(obs)
     # log_act.append(action)
 
