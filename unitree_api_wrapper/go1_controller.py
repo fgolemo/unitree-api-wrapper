@@ -19,9 +19,8 @@ class Go1CfgScales:
 
     def __init__(self):
         super().__init__()
-        # self.cmd_scale = np.array([self.lin_vel, self.lin_vel, self.ang_vel])
-        # ang_vel scaling actually seems to be 1 when using heading cmd
-        self.cmd_scale = np.array([self.lin_vel, self.lin_vel, 1])
+        # goal pos x (m), goal pos y (m), goal orientation (rad)
+        self.cmd_scale = np.array([1.0, 1.0, 1.0])
 
 
 class Go1Controller:
@@ -156,11 +155,10 @@ class Go1Controller:
             obs_out.append(base_ang_vel * self.cfg.ang_vel)
 
         obs_out.append(projected_gravity)
-        obs_out.append(command[:-1] * self.cfg.cmd_scale)
+        obs_out.append(command * self.cfg.cmd_scale)
         obs_out.append(dof_pos * self.cfg.dof_pos)
         obs_out.append(dof_vel * self.cfg.dof_vel)
         obs_out.append(self.last_action)
-        obs_out.append(command[-1:] * 1)
 
         # breakpoint()
 

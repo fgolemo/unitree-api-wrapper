@@ -4,9 +4,8 @@ from tkinter import Tk, Scale, HORIZONTAL, Button, mainloop
 import torch
 from unitree_api_wrapper.go1_controller import Go1Controller
 
-# controller = Go1Controller(policy_path="23Aug22_11-26-34_.pt")
-HISTORY = 15
-controller = Go1Controller(policy_path="history-15-best.pt", obs_history=HISTORY, with_angvel=True)
+HISTORY = 1
+controller = Go1Controller(policy_path="TODO.pt", obs_history=HISTORY, with_angvel=True)
 controller.connect_and_stand()
 
 root = Tk()
@@ -38,9 +37,9 @@ def step_env():
 
 
 sliders = []
-labels = ["lin_vel_x", "lin_vel_y", "ang_vel"]
+labels = ["pos_x", "pos_y", "orientation"]
 for label in labels:
-    slider = Scale(root, from_=-3, to=3, orient=HORIZONTAL, length=500, resolution=0.2, label=label)
+    slider = Scale(root, from_=-1, to=1, orient=HORIZONTAL, length=500, resolution=0.2, label=label)
     slider.set(0)
     slider.pack()
     sliders.append(slider)
