@@ -5,7 +5,10 @@ import torch
 from unitree_api_wrapper.go1_controller import Go1Controller
 
 HISTORY = 1
-controller = Go1Controller(policy_path="best_position.pt", obs_history=HISTORY, with_angvel=True)
+# controller = Go1Controller(policy_path="best_position.pt", obs_history=HISTORY, with_angvel=True)
+controller = Go1Controller(policy_path="lower_base.pt", obs_history=HISTORY, with_angvel=True)
+# controller = Go1Controller(policy_path="bool_lower.pt", obs_history=HISTORY, with_angvel=True, with_bool=True, bool_value=0)
+
 controller.connect_and_stand()
 
 root = Tk()
@@ -44,7 +47,7 @@ for label in labels:
     slider.pack()
     sliders.append(slider)
 
-slider = Scale(root, from_=0.15, to=0.3, orient=HORIZONTAL, length=500, resolution=0.01, label="height")
+slider = Scale(root, from_=0.2, to=0.4, orient=HORIZONTAL, length=500, resolution=0.01, label="height")
 slider.set(0.25)
 slider.pack()
 sliders.append(slider)

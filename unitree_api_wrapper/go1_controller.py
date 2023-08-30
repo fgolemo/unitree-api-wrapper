@@ -25,7 +25,7 @@ class Go1CfgScales:
 
 class Go1Controller:
     def __init__(
-        self, device="cpu", policy_path=None, with_linvel=False, with_angvel=False, use_vicon=False, obs_history=1
+        self, device="cpu", policy_path=None, with_linvel=False, with_angvel=False, with_bool=False, bool_value=0, use_vicon=False, obs_history=1
     ):
         self.d = {
             "FR_0": 0,
@@ -61,6 +61,12 @@ class Go1Controller:
         if with_angvel:
             obs_len += 3
             self.dof_start += 3
+        
+        self.with_bool = with_bool
+        self.bool_value = bool_value
+        if with_bool:
+            obs_len += 1
+            self.dof_start += 1
 
         self.obs = torch.zeros((1, obs_len, obs_history))  # batch, obs, history
         # FR, FL, RR, RL
@@ -156,6 +162,8 @@ class Go1Controller:
 
         obs_out.append(projected_gravity)
         obs_out.append(command * self.cfg.cmd_scale)
+        if self.with_bool:
+            obs_out.append(torch.ones(1) * self.bool_value)
         obs_out.append(dof_pos * self.cfg.dof_pos)
         obs_out.append(dof_vel * self.cfg.dof_vel)
         obs_out.append(self.last_action)
