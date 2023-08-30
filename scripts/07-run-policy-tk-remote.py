@@ -5,7 +5,7 @@ import torch
 from unitree_api_wrapper.go1_controller import Go1Controller
 
 HISTORY = 1
-controller = Go1Controller(policy_path="TODO.pt", obs_history=HISTORY, with_angvel=True)
+controller = Go1Controller(policy_path="best_position.pt", obs_history=HISTORY, with_angvel=True)
 controller.connect_and_stand()
 
 root = Tk()

@@ -19,8 +19,8 @@ class Go1CfgScales:
 
     def __init__(self):
         super().__init__()
-        # goal pos x (m), goal pos y (m), goal orientation (rad)
-        self.cmd_scale = np.array([1.0, 1.0, 1.0])
+        # goal pos x (m), goal pos y (m), goal orientation (rad), base height (m)
+        self.cmd_scale = np.array([1.0, 1.0, 1.0, 1.0])
 
 
 class Go1Controller:
