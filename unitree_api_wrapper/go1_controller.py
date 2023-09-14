@@ -26,7 +26,14 @@ class Go1CfgScales:
 
 class Go1Controller:
     def __init__(
-        self, device="cpu", policy_path=None, with_linvel=False, with_angvel=False, use_vicon=False, obs_history=1
+        self,
+        device="cpu",
+        policy_path=None,
+        with_linvel=False,
+        with_angvel=False,
+        use_vicon=False,
+        obs_history=1,
+        with_dofvel=True,
     ):
         self.d = {
             "FR_0": 0,
@@ -51,6 +58,7 @@ class Go1Controller:
         self.cfg = Go1CfgScales()
         self.dof_len = 12
         self.dof_start = 6
+        self.with_dofvel = with_dofvel
         obs_len = 43
 
         self.with_linvel = with_linvel
@@ -62,6 +70,9 @@ class Go1Controller:
         if with_angvel:
             obs_len += 3
             self.dof_start += 3
+
+        if not with_dofvel:
+            obs_len -= 12
 
         self.obs = torch.zeros((1, obs_len, obs_history))  # batch, obs, history
         # FR, FL, RR, RL
@@ -80,7 +91,7 @@ class Go1Controller:
 
                 self.tracker = ViconTracker(object_id="go", host="172.19.0.61:801")
 
-    def connect_and_stand(self):
+    def connect_and_stand(self, target_p=[60, 60, 60], target_d=[4, 4, 4]):
         self.udp = sdk.UDP(self.LOWLEVEL, 8080, "192.168.123.10", 8007)
         self.safe = sdk.Safety(sdk.LeggedType.Go1)
 
@@ -92,11 +103,17 @@ class Go1Controller:
         # slowly ramping up kp over 3 secs
         for counter in range(int(3.0 / dt)):
             if counter < 50:
-                self.kp = [10, 10, 10]
+                print("p value ramp-up, stage 1")
+                self.kp = [int(p / 4) for p in target_p]
+                self.kd = [int(d / 4) for d in target_d]
             elif counter < 100:
-                self.kp = [40, 40, 40]
+                print("p value ramp-up, stage 2")
+                self.kp = [int(p / 2) for p in target_p]
+                self.kd = [int(d / 2) for d in target_d]
             else:
-                self.kp = [60, 60, 60]
+                print("p value ramp-up, stage 3")
+                self.kp = [int(p / 1) for p in target_p]
+                self.kd = [int(d / 1) for d in target_d]
 
             self.send_pos_cmd()  # send zero command, i.e. rest pos
             time.sleep(dt)
@@ -125,10 +142,43 @@ class Go1Controller:
         self.udp.Send()
         return self.state
 
+    def send_pos_cmd_single_leg(
+        self,
+        leg=0,  # 0=FR, 1=FL, 2=RR, 3=RL
+        pos_cmd=[0.0, 0.0, 0.0],
+        vel_cmd=[0, 0, 0],
+        torque_cmd=[0, 0, 0],
+        kp=[0, 0, 0],
+        kd=[0, 0, 0],
+    ):
+        pos_cmd_tmp = np.copy(self.offset)
+        pos_cmd_tmp[leg] += np.array(pos_cmd)
+
+        # Iterate legs
+        for motor_idx in range(3):
+            # self.cmd.motorCmd[leg_idx * 3 + motor_idx].mode = 1
+            self.cmd.motorCmd[leg * 3 + motor_idx].q = pos_cmd_tmp[leg][motor_idx]
+            self.cmd.motorCmd[leg * 3 + motor_idx].dq = vel_cmd[motor_idx]
+            self.cmd.motorCmd[leg * 3 + motor_idx].Kp = kp[motor_idx]
+            self.cmd.motorCmd[leg * 3 + motor_idx].Kd = kd[motor_idx]
+            self.cmd.motorCmd[leg * 3 + motor_idx].tau = torque_cmd[motor_idx]
+
+        self.state = self.get_low_state()
+        self.safe.PowerProtect(self.cmd, self.state, 1)
+        self.udp.SetSend(self.cmd)
+        self.udp.Send()
+        return self.state
+
     def get_low_state(self) -> LowState:
         self.udp.Recv()
         self.udp.GetRecv(self.state)
         return self.state
+
+    def get_pos_vel_from_state(self, state):
+        dof_pos = np.array([m.q for m in state.motorState[:12]])
+        dof_pos = dof_pos - self.offset.reshape(-1)  # subtract resting position
+        dof_vel = np.array([m.dq for m in state.motorState[:12]])
+        return dof_pos, dof_vel
 
     def get_obs(self, command=torch.zeros(4)):
         # self.obs.fill_(0)  # zero out the obs before we do anything
@@ -156,11 +206,12 @@ class Go1Controller:
             obs_out.append(base_ang_vel * self.cfg.ang_vel)
 
         obs_out.append(projected_gravity)
-        obs_out.append(command[:-1] * self.cfg.cmd_scale)
+        obs_out.append(command[:-1] * self.cfg.cmd_scale)  # lin vel/lin vel/ang vel
         obs_out.append(dof_pos * self.cfg.dof_pos)
-        obs_out.append(dof_vel * self.cfg.dof_vel)
+        if self.with_dofvel:
+            obs_out.append(dof_vel * self.cfg.dof_vel)
         obs_out.append(self.last_action)
-        obs_out.append(command[-1:] * 1)
+        obs_out.append(command[-1:] * 1)  # height cmd
 
         # breakpoint()
 
@@ -173,15 +224,15 @@ class Go1Controller:
 
     def clip_action_rate(self, last_obs, action, clip_max=0.3):
 
-        action_diff = action - last_obs[0, self.dof_start:self.dof_start+self.dof_len]
+        action_diff = action - last_obs[0, self.dof_start : self.dof_start + self.dof_len]
         # print ("action diff", action_diff)
         action_diff = torch.clip(action_diff, -clip_max, clip_max)
-        action_out = last_obs[0, self.dof_start:self.dof_start+self.dof_len] + action_diff
+        action_out = last_obs[0, self.dof_start : self.dof_start + self.dof_len] + action_diff
         return action_out
 
     def get_action(self, obs):
         # important: the last action is the unscaled action but the thing that runs on the robot is the scaled action
-        obs = obs.to(self.device).view(1,-1) # flatten the history obs
+        obs = obs.to(self.device).view(1, -1)  # flatten the history obs
         with torch.no_grad():
             action = self.model(obs)
 
